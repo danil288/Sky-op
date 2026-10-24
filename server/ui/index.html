@@ -1,0 +1,837 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="coopbridge-token" content="{{TOKEN}}">
+<title>CoopBridge · слежение за NPC</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f3f4f6; --panel: #ffffff; --text: #1b1e23; --muted: #6a7280; --line: #e2e5ea;
+    --accent: #2f6fed; --good: #1c9a55; --warn: #c98100; --bad: #d23a3a;
+    --hp: #d23a3a; --mp: #2f6fed; --sp: #1c9a55; --chip: #eef1f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121418; --panel: #1b1e24; --text: #e7e9ec; --muted: #98a0ab; --line: #2b2f37;
+      --accent: #6c9bff; --good: #3ccf7d; --warn: #f0b43c; --bad: #ff6b6b;
+      --hp: #ff5d5d; --mp: #6c9bff; --sp: #3ccf7d; --chip: #262a32;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  .muted { color: var(--muted); }
+  header.bar { position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 1px solid var(--line); padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+  .brand { font-weight: 700; }
+  form.watch { display: flex; gap: 6px; flex: 1 1 360px; max-width: 640px; }
+  input[type=text] { flex: 1; min-width: 120px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+  button { padding: 7px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:hover { filter: brightness(1.07); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--chip); font-size: 13px; white-space: nowrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .good .dot { background: var(--good); } .warn .dot { background: var(--warn); } .bad .dot { background: var(--bad); }
+  .live .dot { animation: pulse 1s ease-out; }
+  @keyframes pulse { from { box-shadow: 0 0 0 0 rgba(60,207,125,.7); } to { box-shadow: 0 0 0 8px rgba(60,207,125,0); } }
+  #msg { padding: 0 16px; min-height: 22px; margin-top: 8px; font-size: 13px; }
+  #msg.err, #net-status.err { color: var(--bad); } #msg.ok, #net-status.ok { color: var(--good); }
+  #offline { display: none; margin: 8px 16px 0; padding: 8px 12px; border-radius: 8px; background: var(--bad); color: #fff; }
+  .title { padding: 14px 16px 4px; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }
+  .title h1 { margin: 0; font-size: 22px; }
+  main { padding: 8px 16px 24px; display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); align-items: start; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .card h2 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+  .wide { grid-column: 1 / -1; }
+  .kv { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; border-bottom: 1px dashed var(--line); }
+  .kv:last-child { border-bottom: 0; }
+  .kv span { color: var(--muted); } .kv b { font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+  .attrs { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 2px 14px; }
+  .vital { margin-bottom: 10px; border-radius: 8px; padding: 2px 4px; }
+  .vrow { display: flex; justify-content: space-between; font-weight: 600; }
+  .bar { height: 12px; border-radius: 6px; background: var(--chip); overflow: hidden; margin: 4px 0 2px; }
+  .fill { display: block; height: 100%; width: 0; border-radius: 6px; transition: width .25s ease, background-color .25s; }
+  .fill.hp { background: var(--hp); } .fill.mp { background: var(--mp); } .fill.sp { background: var(--sp); }
+  .vsub { font-size: 12px; }
+  .vital.hit { animation: hit .5s ease-out; }
+  @keyframes hit { 0% { background: rgba(210,58,58,.35); } 100% { background: transparent; } }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { background: var(--chip); border-radius: 999px; padding: 2px 10px; font-size: 13px; }
+  .scroll { max-height: 340px; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; position: sticky; top: 0; background: var(--panel); }
+  td.n { text-align: right; white-space: nowrap; } td.id { color: var(--muted); font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  .worn { color: var(--good); font-weight: 600; }
+  .log { max-height: 320px; overflow: auto; font-size: 13px; }
+  .log div { padding: 2px 0; border-bottom: 1px dashed var(--line); }
+  .log time { color: var(--muted); font-family: ui-monospace, Consolas, monospace; margin-right: 8px; }
+  .empty { color: var(--muted); }
+  main.locked .editable, main.locked button, main.locked input { opacity: .55; pointer-events: none; }
+  .edit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 6px 10px; margin-top: 6px; }
+  .edit-grid label { display: flex; flex-direction: column; font-size: 11px; color: var(--muted); gap: 2px; }
+  input[type=number], .edit-grid input, .form input { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; width: 100%; min-width: 0; }
+  input[type=number]:focus, input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+  .form input { flex: 1 1 110px; width: auto; }
+  .form input.short { flex: 0 1 80px; }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  button.small { padding: 2px 8px; font-size: 12px; border-radius: 6px; }
+  button.danger { color: var(--bad); }
+  .chip button { border: 0; background: transparent; padding: 0 0 0 6px; color: var(--muted); cursor: pointer; font-size: 13px; }
+  .chip button:hover { color: var(--bad); }
+  .hint { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+  select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; }
+  .listcard { margin: 8px 16px 0; }
+  .form label.chk { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; font-size: 13px; color: var(--muted); }
+  .form label.chk input { width: auto; flex: 0 0 auto; }
+  #list-body { max-height: 300px; }
+  tr.row { cursor: pointer; }
+  tr.row:hover td { background: var(--chip); }
+  tr.sel td { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+  tr.dead td { color: var(--muted); }
+  .mini { display: inline-block; width: 60px; height: 7px; border-radius: 4px; background: var(--chip); overflow: hidden; vertical-align: middle; margin-right: 6px; }
+  .mini i { display: block; height: 100%; background: var(--hp); }
+</style>
+</head>
+<body>
+<header class="bar">
+  <span class="brand">CoopBridge</span>
+  <span id="game" class="pill bad"><i class="dot"></i><span>игра не подключена</span></span>
+  <span id="role" class="pill" hidden><i class="dot"></i><span></span></span>
+  <form class="watch" id="form" autocomplete="off">
+    <input type="text" id="ref" placeholder="refID NPC (или выберите в списке), либо player" spellcheck="false">
+    <button class="primary" type="submit">Выбрать</button>
+    <button type="button" id="me" title="Следить за игроком">Игрок</button>
+    <button type="button" id="stop">Снять выбор</button>
+  </form>
+</header>
+<div id="msg" class="muted">Выберите NPC в списке или введите refID (из консоли игры: клавиша ~, затем клик по NPC).</div>
+<div id="offline">Нет связи с сервером панели. Переподключаюсь…</div>
+
+<section class="card listcard" id="card-net"><h2>Сеть · игра вместе (Radmin VPN, Hamachi)</h2>
+  <div class="form">
+    <label class="chk"><input type="radio" name="netmode" value="host" checked> Я админ: раздаю данные NPC</label>
+    <label class="chk"><input type="radio" name="netmode" value="viewer"> Я игрок: подключаюсь к админу</label>
+    <label class="chk" id="net-edit-label"><input type="checkbox" id="net-allow-edit" checked> Игрокам разрешено править NPC</label>
+  </div>
+  <div class="form">
+    <input type="text" id="net-host" list="net-ifaces" placeholder="адрес" spellcheck="false" autocomplete="off">
+    <datalist id="net-ifaces"></datalist>
+    <input type="number" class="short" id="net-port" value="7788" min="1" max="65535" title="порт">
+    <input type="password" id="net-pass" placeholder="пароль комнаты (от 4 символов)" autocomplete="off">
+    <input type="text" id="net-name" placeholder="ваше имя" maxlength="32" spellcheck="false" autocomplete="off">
+    <button type="button" class="primary" id="net-start">Запустить</button>
+    <button type="button" id="net-stop">Выйти</button>
+  </div>
+  <p class="hint" id="net-hint"></p>
+  <div id="net-status" class="muted">Сеть выключена.</div>
+</section>
+
+<section class="card listcard" id="card-list"><h2 id="list-title">NPC в мире</h2>
+  <div class="form">
+    <input type="text" id="flt" placeholder="поиск по имени или refID" spellcheck="false">
+    <select id="sort"><option value="dist">по расстоянию до игрока</option><option value="name">по имени</option><option value="hp">по здоровью (раненые первыми)</option></select>
+    <label class="chk"><input type="checkbox" id="hide-dead"> скрыть мёртвых</label>
+    <button type="button" id="world-toggle">Следить за всеми</button>
+  </div>
+  <div class="scroll" id="list-body"><span class="empty">нет данных</span></div>
+</section>
+
+<div class="title" id="title"><h1>NPC не выбран</h1></div>
+
+<main id="main" class="locked">
+  <section class="card" id="card-vitals"><h2>Показатели</h2><div id="vitals-body"></div></section>
+  <section class="card" id="card-position"><h2>Положение</h2>
+    <div class="edit-grid editable" id="pos-inputs"></div><div id="pos-info" class="empty" style="margin-top:8px">нет данных</div></section>
+  <section class="card" id="card-actions"><h2>Действия</h2>
+    <div class="btns">
+      <button type="button" data-act="action.kill" class="danger">Убить</button>
+      <button type="button" data-act="action.resurrect">Воскресить</button>
+      <button type="button" data-act="action.drawWeapon">Достать оружие</button>
+      <button type="button" data-act="action.sheatheWeapon">Убрать оружие</button>
+      <button type="button" data-act="action.stopCombat">Прекратить бой</button>
+    </div>
+    <div class="form"><input type="text" id="combat-target" placeholder="refID цели боя или player" spellcheck="false"><button type="button" id="combat-start">Начать бой</button></div>
+    <p class="hint">Меняются только данные этого экземпляра NPC. Имя, ID, уровень и раса не редактируются. Изменения попадают в сохранение игры.</p>
+  </section>
+  <section class="card" id="card-ai"><h2>ИИ и поведение</h2><div class="body empty">нет данных</div></section>
+  <section class="card" id="card-lasthit"><h2>Последний удар по NPC</h2><div class="body empty">ударов не было</div></section>
+  <section class="card" id="card-attrs"><h2>Характеристики</h2><div class="edit-grid editable" id="attr-inputs"></div><div id="attr-info" style="margin-top:8px"></div></section>
+  <section class="card" id="card-factions"><h2>Фракции</h2>
+    <div class="form"><input type="text" id="fac-id" placeholder="FormID фракции" spellcheck="false"><input type="number" class="short" id="fac-rank" placeholder="ранг" value="0" step="1">
+      <button type="button" id="fac-add">Добавить</button><button type="button" id="fac-rank-set">Изменить ранг</button></div>
+    <div class="body empty" id="fac-list">нет данных</div></section>
+  <section class="card" id="card-effects"><h2>Активные эффекты</h2><div class="body empty">нет данных</div></section>
+  <section class="card" id="card-log"><h2>Журнал изменений</h2><div class="body log empty">пока пусто</div></section>
+  <section class="card wide" id="card-inventory"><h2>Инвентарь</h2>
+    <div class="form"><input type="text" id="inv-id" placeholder="FormID предмета (например 0003133C)" spellcheck="false"><input type="number" class="short" id="inv-count" value="1" min="1" step="1">
+      <button type="button" id="inv-add">Добавить</button><button type="button" id="inv-remove">Убрать</button></div>
+    <div class="body empty" id="inv-table">нет данных</div></section>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const isObj = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+const str = (v) => (typeof v === "string" ? v : "");
+const f1 = (n) => (n === null ? "?" : n.toFixed(1));
+const signed = (n) => (n === null ? "?" : (n < 0 ? "−" : "+") + Math.abs(n).toFixed(1));
+const yn = (v) => (v === true ? "да" : v === false ? "нет" : "?");
+const pad = (n, w = 2) => String(n).padStart(w, "0");
+const hms = (ms) => { const d = new Date(ms); return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()) + "." + pad(d.getMilliseconds(), 3); };
+const named = (v) => { if (!isObj(v)) return "нет"; const id = str(v.id), n = str(v.name); return n && id ? n + " (" + id + ")" : n || id || "нет"; };
+const kv = (label, value) => '<div class="kv"><span>' + esc(label) + "</span><b>" + esc(value) + "</b></div>";
+
+const LIFE = { alive: "жив", dying: "умирает", dead: "мёртв", unconscious: "без сознания", reanimate: "оживает", recycle: "recycle", restrained: "связан", essentialDown: "повален (неубиваемый)", bleedout: "при смерти (bleedout)" };
+const SIT = { normal: "обычное", wantToSit: "хочет сесть", waitingForSitAnim: "садится", sitting: "сидит", wantToStand: "встаёт", wantToSleep: "хочет спать", waitingForSleepAnim: "ложится", sleeping: "спит", wantToWake: "просыпается" };
+const WEAPON = { sheathed: "убрано", wantToDraw: "собирается достать", drawing: "достаёт", drawn: "обнажено", wantToSheathe: "собирается убрать", sheathing: "убирает" };
+const tr = (map, k) => map[str(k)] || str(k) || "?";
+const VITALS = [["health", "Здоровье", "hp"], ["magicka", "Магия", "mp"], ["stamina", "Выносливость", "sp"]];
+const ATTRS = [["aggression", "агрессия"], ["confidence", "уверенность"], ["energy", "энергия"], ["morality", "мораль"], ["mood", "настроение"], ["assistance", "помощь"], ["speedMult", "скорость %"], ["inventoryWeight", "вес вещей"], ["carryWeight", "грузоподъёмность"], ["healRate", "реген. здоровья"], ["magickaRate", "реген. магии"], ["staminaRate", "реген. выносливости"], ["paralysis", "паралич"], ["invisibility", "невидимость"]];
+
+const TOKEN = (document.querySelector('meta[name="coopbridge-token"]') || {}).content || "";
+const S = { ref: null, sections: {}, log: [], gameConnected: false, plugin: null, seq: 0, updates: 0, updatedAt: null };
+const A = new Map(); // refID -> { sections, log, seq, updates, updatedAt } для всех отслеживаемых NPC
+let tracking = false;
+let net = { mode: "off", state: "off", message: "", address: "", name: "", viewers: [] };
+S.readOnly = false;
+S.canEdit = true; // можно ли редактировать: у игрока зависит от разрешения админа
+const PLAYER = "00000014";
+const MAX_LOG = 200;
+
+/** Показывает в основной панели данные выбранного NPC. */
+function bindSelected() {
+  const a = S.ref ? A.get(S.ref) : null;
+  S.sections = a ? a.sections : {};
+  S.log = a ? a.log : [];
+  S.seq = a ? a.seq : 0;
+  S.updates = a ? a.updates : 0;
+  S.updatedAt = a ? a.updatedAt : null;
+}
+let lastHp = null;
+let lastEventAt = 0;
+
+/* ---------- отрисовка ---------- */
+function setBody(card, html, emptyText) {
+  const el = $("card-" + card).querySelector(".body");
+  el.classList.toggle("empty", !html);
+  el.innerHTML = html || esc(emptyText);
+}
+
+function renderGame() {
+  const el = $("game");
+  const p = S.plugin;
+  el.className = "pill " + (S.gameConnected ? "good" : "bad");
+  el.lastChild.textContent = S.gameConnected ? "игра подключена" + (p ? ": " + p.plugin + " " + p.version : "") : "игра не подключена";
+}
+
+function renderTitle() {
+  const t = $("title");
+  if (S.ref === null) { t.innerHTML = "<h1>NPC не выбран</h1>"; return; }
+  const idn = isObj(S.sections.identity) ? S.sections.identity : null;
+  const pres = isObj(S.sections.presence) ? S.sections.presence : null;
+  const name = idn ? str(idn.name) || "без имени" : "ожидание данных…";
+  const meta = [S.ref, idn && str(idn.race), idn && num(idn.level) !== null ? "ур. " + num(idn.level) : "", idn && str(idn.baseId) ? "baseID " + str(idn.baseId) : ""].filter(Boolean).join(" · ");
+  let cls = "warn", text = "ждём данные";
+  if (!S.gameConnected) { cls = "bad"; text = "игра отключена, данные устарели"; }
+  else if (pres && pres.available === false) { cls = "bad"; text = "недоступен: " + (str(pres.reason) || "?"); }
+  else if (pres && pres.loaded === false) { cls = "warn"; text = "не загружен в мир, данные могут устареть"; }
+  else if (S.updates > 0) { cls = "good"; text = "онлайн"; }
+  t.innerHTML = "<h1>" + esc(name) + '</h1><span class="muted">' + esc(meta) + '</span><span class="pill ' + cls + '" id="live"><i class="dot"></i><span>' + esc(text) + '</span></span><span class="muted" id="stamp"></span>';
+  renderStamp();
+}
+
+function renderStamp() {
+  const el = $("stamp");
+  if (!el) return;
+  el.textContent = S.updatedAt === null ? "" : "обновлено " + hms(S.updatedAt) + " · пакетов: " + S.updates;
+}
+
+const VITAL_PARTS = [["current", "текущее"], ["max", "максимум"], ["base", "база"], ["modPermanent", "пост. модификатор"], ["modTemporary", "врем. модификатор"], ["damage", "урон"]];
+const POS_FIELDS = [["x", "x"], ["y", "y"], ["z", "z"], ["angleZ", "угол, °"]];
+const ATTR_EDITABLE = ATTRS.filter(([k]) => k !== "inventoryWeight");
+const r2 = (n) => String(Math.round(n * 100) / 100);
+
+function inputsHtml(items, prefix) {
+  return items.map(([k, label]) => '<label>' + esc(label) + '<input type="number" step="any" data-field="' + prefix + k + '"></label>').join("");
+}
+
+function initVitals() {
+  $("vitals-body").innerHTML = VITALS.map(([k, label, c]) =>
+    '<div class="vital" id="v-' + k + '"><div class="vrow"><span>' + label + '</span><span class="vnum">—</span></div>' +
+    '<div class="bar"><i class="fill ' + c + '"></i></div>' +
+    '<div class="edit-grid editable">' + inputsHtml(VITAL_PARTS, "vitals." + k + ".") + '</div></div>').join("");
+  $("pos-inputs").innerHTML = inputsHtml(POS_FIELDS, "position.");
+  $("attr-inputs").innerHTML = inputsHtml(ATTR_EDITABLE, "attributes.");
+}
+
+/** Значение поля ввода из данных игры; null - данных нет. */
+function valueFor(field) {
+  const p = field.split(".");
+  if (p[0] === "vitals") { const v = S.sections.vitals; return isObj(v) && isObj(v[p[1]]) ? num(v[p[1]][p[2]]) : null; }
+  if (p[0] === "position") { const v = S.sections.position; return isObj(v) ? num(v[p[1]]) : null; }
+  if (p[0] === "attributes") { const v = S.sections.attributes; return isObj(v) ? num(v[p[1]]) : null; }
+  return null;
+}
+
+/** Обновляет поля ввода из состояния. Поле, в котором сейчас печатают, не трогаем (если не force). */
+function fillInputs(force) {
+  for (const el of document.querySelectorAll("input[data-field]")) {
+    if (!force && document.activeElement === el) continue;
+    const v = valueFor(el.dataset.field);
+    el.value = v === null ? "" : r2(v);
+  }
+}
+
+function renderVitals() {
+  const v = isObj(S.sections.vitals) ? S.sections.vitals : null;
+  for (const [k] of VITALS) {
+    const row = $("v-" + k);
+    const d = v && isObj(v[k]) ? v[k] : null;
+    if (!d) { row.querySelector(".vnum").textContent = "—"; row.querySelector(".fill").style.width = "0"; continue; }
+    const cur = num(d.current), max = num(d.max);
+    const pct = cur !== null && max !== null && max > 0 ? Math.max(0, Math.min(1, cur / max)) : 0;
+    row.querySelector(".vnum").textContent = f1(cur) + " / " + f1(max) + "  (" + Math.round(pct * 100) + "%)";
+    row.querySelector(".fill").style.width = (pct * 100).toFixed(1) + "%";
+    if (k === "health") {
+      if (lastHp !== null && cur !== null && cur < lastHp - 0.05) { row.classList.remove("hit"); void row.offsetWidth; row.classList.add("hit"); }
+      lastHp = cur;
+    }
+  }
+  fillInputs(false);
+}
+
+function renderPosition() {
+  const l = S.sections.location;
+  const el = $("pos-info");
+  const html = isObj(l) ? kv("Ячейка", named(l.cell)) + kv("Мир", str(l.worldspace) || "нет") + kv("Локация", str(l.location) || "нет") : "";
+  el.classList.toggle("empty", !html);
+  el.innerHTML = html || "нет данных";
+  fillInputs(false);
+}
+
+function renderAi() {
+  const st = S.sections.state, c = S.sections.combat, f = S.sections.follower, pk = S.sections.package;
+  let h = "";
+  if (isObj(st)) {
+    const moves = [["идёт", st.walking], ["бежит", st.running], ["спринт", st.sprinting], ["крадётся", st.sneaking], ["плывёт", st.swimming], ["летит", st.flying]].filter((m) => m[1] === true).map((m) => m[0]);
+    const flags = [["неубиваемый", st.essential], ["защищённый", st.protected], ["призрак", st.ghost]].filter((m) => m[1] === true).map((m) => m[0]);
+    h += kv("Состояние", tr(LIFE, st.lifeState)) + kv("Поза", tr(SIT, st.sitSleep)) + kv("Оружие", tr(WEAPON, st.weapon)) + kv("Движение", moves.length ? moves.join(", ") : "стоит");
+    if (flags.length) h += kv("Флаги", flags.join(", "));
+  }
+  if (isObj(c)) h += kv("В бою", yn(c.inCombat)) + kv("Цель боя", named(c.target)) + kv("Враждебен игроку", yn(c.hostileToPlayer)) + kv("Зол на игрока", yn(c.angryWithPlayer));
+  if (pk !== undefined) {
+    h += isObj(pk) ? kv("Пакет ИИ", (str(pk.type) || "?") + " " + str(pk.id) + (str(pk.editorId) ? " (" + str(pk.editorId) + ")" : "")) + kv("Шаг пакета", String(num(pk.procedure) ?? "?")) + kv("Цель пакета", named(pk.target)) : kv("Пакет ИИ", "нет");
+  }
+  if (isObj(f)) h += kv("Спутник игрока", yn(f.teammate)) + kv("Под командой", yn(f.commanded)) + kv("Хозяин", named(f.commander)) + kv("Верховое животное", named(f.mount));
+  setBody("ai", h, "нет данных");
+}
+
+function renderAttrs() {
+  const a = S.sections.attributes;
+  $("attr-info").innerHTML = isObj(a) ? kv("Вес вещей (считает игра)", f1(num(a.inventoryWeight))) : "";
+  fillInputs(false);
+}
+
+function setFacList(html, emptyText) {
+  const el = $("fac-list");
+  el.classList.toggle("empty", !html);
+  el.innerHTML = html || esc(emptyText);
+}
+
+function renderFactions() {
+  const fs = S.sections.factions;
+  if (!Array.isArray(fs)) return setFacList("", "нет данных");
+  const items = fs.filter(isObj).map((o) => '<span class="chip">' + esc(str(o.name) || str(o.id)) + " [" + esc(String(num(o.rank) ?? "?")) + "]" +
+    '<button type="button" title="Удалить из фракции" data-fac="' + esc(str(o.id)) + '">✕</button></span>');
+  setFacList(items.length ? '<div class="chips">' + items.join("") + "</div>" : "", "фракций нет");
+}
+
+function renderEffects() {
+  const es = S.sections.effects;
+  if (!Array.isArray(es)) return setBody("effects", "", "нет данных");
+  const rows = es.filter(isObj).map((e) => {
+    const spell = str(e.spell) || str(e.effect) || str(e.spellId) || "?";
+    const mag = num(e.magnitude), dur = num(e.duration), rem = num(e.remaining);
+    const eff = str(e.effect) && str(e.effect) !== str(e.spell) ? " — " + str(e.effect) : "";
+    return kv(spell + (mag ? " (" + f1(mag) + ")" : "") + eff, dur !== null && dur > 0 ? "осталось " + (rem ?? "?") + " с из " + dur : "постоянный");
+  });
+  setBody("effects", rows.join(""), "эффектов нет");
+}
+
+function renderLastHit() {
+  const h = S.sections.lastHit;
+  if (!isObj(h)) return setBody("lasthit", "", "ударов не было");
+  const flags = [h.powerAttack === true && "силовая", h.sneakAttack === true && "из скрытности", h.bashAttack === true && "башем", h.blocked === true && "заблокирован"].filter(Boolean);
+  setBody("lasthit", kv("Номер удара", "№" + (num(h.count) ?? "?")) + kv("Атаковал", named(h.attacker)) + kv("Чем", isObj(h.source) ? named(h.source) : "—") + (flags.length ? kv("Особенности", flags.join(", ")) : ""), "");
+}
+
+function setInvTable(html, emptyText) {
+  const el = $("inv-table");
+  el.classList.toggle("empty", !html);
+  el.innerHTML = html || esc(emptyText);
+}
+
+function renderInventory() {
+  const inv = S.sections.inventory;
+  if (!isObj(inv) || !Array.isArray(inv.items)) return setInvTable("", "нет данных");
+  const items = inv.items.filter(isObj).map((o) => ({ id: str(o.id), name: str(o.name) || str(o.id), type: str(o.type), count: num(o.count) ?? 0, worn: o.worn === true }))
+    .sort((a, b) => Number(b.worn) - Number(a.worn) || a.name.localeCompare(b.name, "ru"));
+  $("card-inventory").querySelector("h2").textContent = "Инвентарь · " + items.length + " поз. · золото " + (num(inv.gold) ?? 0);
+  const rows = items.map((i) => {
+    const b = (act, label, cls) => '<button type="button" class="small ' + (cls || "") + '" data-inv="' + act + '" data-id="' + esc(i.id) + '" data-count="' + i.count + '">' + label + "</button> ";
+    return "<tr><td>" + (i.worn ? '<span class="worn">надето</span>' : "") + "</td><td>" + esc(i.name) + '</td><td class="n">×' + i.count + "</td><td>" + esc(i.type) + '</td><td class="id">' + esc(i.id) + "</td><td>" +
+      b("dec", "−1") + b("all", "убрать все", "danger") + (i.worn ? b("unequip", "снять") : b("equip", "надеть")) + "</td></tr>";
+  }).join("");
+  setInvTable(items.length ? '<div class="scroll"><table><thead><tr><th></th><th>Предмет</th><th>Кол-во</th><th>Тип</th><th>ID</th><th>Действия</th></tr></thead><tbody>' + rows + "</tbody></table></div>" : "", "инвентарь пуст");
+}
+
+function renderLog() {
+  const el = $("card-log").querySelector(".body");
+  const items = S.log.slice(-150).reverse();
+  el.classList.toggle("empty", items.length === 0);
+  el.innerHTML = items.length ? items.map((e) => "<div><time>" + hms(e.t) + "</time>" + esc(e.text) + "</div>").join("") : "пока пусто";
+}
+
+const DEPENDS = {
+  title: ["identity", "presence"], vitals: ["vitals"], position: ["position", "location"], ai: ["state", "combat", "package", "follower"],
+  attrs: ["attributes"], factions: ["factions"], effects: ["effects"], lasthit: ["lastHit"], inventory: ["inventory"],
+};
+const RENDER = { title: renderTitle, vitals: renderVitals, position: renderPosition, ai: renderAi, attrs: renderAttrs, factions: renderFactions, effects: renderEffects, lasthit: renderLastHit, inventory: renderInventory };
+
+function updateLocked() {
+  $("main").classList.toggle("locked", !S.canEdit || S.ref === null || !S.gameConnected || !S.updates);
+}
+
+function renderAll() {
+  $("card-inventory").querySelector("h2").textContent = "Инвентарь";
+  lastHp = null;
+  for (const fn of Object.values(RENDER)) fn();
+  fillInputs(true);
+  renderLog();
+  renderGame();
+  updateLocked();
+}
+
+function renderChanged(names) {
+  for (const [card, deps] of Object.entries(DEPENDS)) if (deps.some((d) => names.includes(d))) RENDER[card]();
+  renderStamp();
+}
+
+/* ---------- события от сервера ---------- */
+function newEntry() { return { sections: {}, log: [], seq: 0, updates: 0, updatedAt: null }; }
+
+function onEvent(msg) {
+  if (!isObj(msg)) return;
+  lastEventAt = Date.now();
+  switch (msg.type) {
+    case "snapshot": {
+      A.clear();
+      if (isObj(msg.actors)) {
+        for (const [ref, v] of Object.entries(msg.actors)) {
+          if (!isObj(v)) continue;
+          A.set(ref, { sections: isObj(v.sections) ? v.sections : {}, log: Array.isArray(v.log) ? v.log : [], seq: v.seq || 0, updates: v.updates || 0, updatedAt: v.updatedAt ?? null });
+        }
+      }
+      tracking = msg.tracking === true;
+      S.readOnly = msg.readOnly === true;
+      S.canEdit = msg.canEdit !== false;
+      if (isObj(msg.net)) net = msg.net;
+      if (S.ref === null && typeof msg.selected === "string") S.ref = msg.selected;
+      S.gameConnected = msg.gameConnected === true; S.plugin = msg.plugin ?? null;
+      bindSelected();
+      renderAll(); renderList(); renderWorldBtn(); renderNet();
+      break;
+    }
+    case "net":
+      if (isObj(msg.net)) { net = msg.net; renderNet(); }
+      break;
+    case "state": {
+      if (typeof msg.ref !== "string" || !isObj(msg.sections)) break;
+      let a = A.get(msg.ref);
+      if (!a) { a = newEntry(); A.set(msg.ref, a); }
+      Object.assign(a.sections, msg.sections);
+      if (Array.isArray(msg.log) && msg.log.length) { a.log.push(...msg.log); if (a.log.length > MAX_LOG) a.log.splice(0, a.log.length - MAX_LOG); }
+      a.seq = msg.seq; a.updates = msg.updates; a.updatedAt = msg.updatedAt;
+      if (msg.ref === S.ref) {
+        bindSelected();
+        renderChanged(Object.keys(msg.sections));
+        updateLocked();
+        if (Array.isArray(msg.log) && msg.log.length) renderLog();
+        const live = $("live");
+        if (live) { live.classList.remove("live"); void live.offsetWidth; live.classList.add("live"); }
+      }
+      scheduleList();
+      break;
+    }
+    case "gone": {
+      if (typeof msg.ref !== "string") break;
+      if (msg.ref === S.ref) {
+        const a = A.get(msg.ref);
+        if (a) { a.sections.presence = { available: true, loaded: false, reason: "" }; bindSelected(); renderTitle(); updateLocked(); }
+      } else if (msg.removed !== false) {
+        A.delete(msg.ref);
+      }
+      scheduleList();
+      break;
+    }
+    case "world":
+      tracking = msg.tracking === true;
+      renderWorldBtn();
+      break;
+    case "status":
+      S.gameConnected = msg.gameConnected === true; S.plugin = msg.plugin ?? S.plugin;
+      renderGame(); renderTitle(); updateLocked(); scheduleList();
+      break;
+    case "log": {
+      const a = typeof msg.ref === "string" ? A.get(msg.ref) : null;
+      if (a && Array.isArray(msg.entries)) {
+        a.log.push(...msg.entries);
+        if (a.log.length > MAX_LOG) a.log.splice(0, a.log.length - MAX_LOG);
+        if (msg.ref === S.ref) renderLog();
+      }
+      break;
+    }
+  }
+}
+
+/* ---------- список всех NPC ---------- */
+function summary(ref, a) {
+  const s = a.sections;
+  const idn = isObj(s.identity) ? s.identity : {};
+  const hp = isObj(s.vitals) && isObj(s.vitals.health) ? s.vitals.health : null;
+  const st = isObj(s.state) ? s.state : {};
+  const cb = isObj(s.combat) ? s.combat : {};
+  const pres = isObj(s.presence) ? s.presence : {};
+  const cur = hp ? num(hp.current) : null, max = hp ? num(hp.max) : null;
+  const pct = cur !== null && max !== null && max > 0 ? Math.max(0, Math.min(1, cur / max)) : null;
+  return { ref, name: str(idn.name) || "(без имени)", race: str(idn.race), level: num(idn.level), cur, max, pct,
+    dead: st.dead === true || str(st.lifeState) === "dead", combat: cb.inCombat === true, gone: pres.available === false || pres.loaded === false, dist: distanceToPlayer(a) };
+}
+
+function cellId(a) { const l = a.sections.location; return isObj(l) && isObj(l.cell) ? str(l.cell.id) : ""; }
+
+/** Расстояние до игрока в метрах (70 единиц игры = 1 м); только если оба в одной ячейке. */
+function distanceToPlayer(a) {
+  const p = A.get(PLAYER);
+  const pa = a.sections.position, pp = p && p.sections.position;
+  if (!p || !isObj(pa) || !isObj(pp)) return null;
+  const c1 = cellId(a), c2 = cellId(p);
+  if (!c1 || c1 !== c2) return null;
+  const dx = num(pa.x) - num(pp.x), dy = num(pa.y) - num(pp.y), dz = num(pa.z) - num(pp.z);
+  const d = Math.hypot(dx, dy, dz);
+  return Number.isFinite(d) ? d / 70 : null;
+}
+
+let listTimer = null;
+function scheduleList() { if (listTimer === null) listTimer = setTimeout(() => { listTimer = null; renderList(); }, 250); }
+
+function renderWorldBtn() {
+  const b = $("world-toggle");
+  b.textContent = (S.readOnly ? "Слежение за всеми (решает админ): " : "Слежение за всеми: ") + (tracking ? "включено" : "выключено");
+  b.classList.toggle("primary", tracking);
+}
+
+function renderList() {
+  const filter = $("flt").value.trim().toLowerCase();
+  const sort = $("sort").value;
+  const hideDead = $("hide-dead").checked;
+  let rows = [];
+  for (const [ref, a] of A) rows.push(summary(ref, a));
+  const total = rows.length;
+  rows = rows.filter((r) => (!hideDead || !r.dead) && (!filter || r.name.toLowerCase().includes(filter) || r.ref.toLowerCase().includes(filter)));
+  rows.sort((x, y) => {
+    if (sort === "name") return x.name.localeCompare(y.name, "ru");
+    if (sort === "hp") return (x.pct ?? 2) - (y.pct ?? 2);
+    return (x.dist ?? 1e12) - (y.dist ?? 1e12) || x.name.localeCompare(y.name, "ru");
+  });
+  $("list-title").textContent = "NPC в мире · " + total + (rows.length !== total ? " (показано " + rows.length + ")" : "");
+  const shown = rows.slice(0, 300);
+  const html = shown.map((r) => {
+    const hp = r.pct === null ? "?" : '<span class="mini"><i style="width:' + (r.pct * 100).toFixed(0) + '%"></i></span>' + f1(r.cur) + " / " + f1(r.max);
+    const state = r.gone ? "не загружен" : r.dead ? "мёртв" : r.combat ? "в бою" : "жив";
+    const cls = "row" + (r.ref === S.ref ? " sel" : "") + (r.dead ? " dead" : "");
+    return '<tr class="' + cls + '" data-ref="' + esc(r.ref) + '"><td>' + esc(r.name) + '</td><td class="id">' + esc(r.ref) + "</td><td>" + esc(r.race) + (r.level !== null ? " · ур. " + r.level : "") +
+      "</td><td>" + hp + "</td><td>" + state + '</td><td class="n">' + (r.dist === null ? "—" : r.dist.toFixed(1) + " м") + "</td></tr>";
+  }).join("");
+  const box = $("list-body");
+  const top = box.scrollTop;
+  box.innerHTML = shown.length
+    ? "<table><thead><tr><th>Имя</th><th>refID</th><th>Раса, уровень</th><th>Здоровье</th><th>Состояние</th><th>Расстояние</th></tr></thead><tbody>" + html + "</tbody></table>" +
+      (rows.length > shown.length ? '<div class="hint" style="margin-top:6px">показаны первые ' + shown.length + " из " + rows.length + ": уточните поиск</div>" : "")
+    : '<span class="empty">' + (total ? "ничего не найдено" : tracking ? "ждём данные от игры…" : "включите слежение за всеми или выберите NPC по refID") + "</span>";
+  box.scrollTop = top;
+}
+
+/** Выбирает NPC: показывает его данные и просит игру читать его каждый такт. */
+function select(ref) {
+  S.ref = ref;
+  bindSelected();
+  renderAll();
+  renderList();
+  $("ref").value = ref;
+  if (S.readOnly) { say(S.canEdit ? "Показан выбранный NPC. Правки уйдут админу, он их применит." : "Показан выбранный NPC. Админ запретил вам править NPC.", undefined); return; }
+  say("Запрос отправлен…");
+  act("/api/watch", { ref });
+}
+
+function normalizeRef(text) {
+  const t = text.trim();
+  if (t.toLowerCase() === "player") return PLAYER;
+  const m = /^(?:0x)?([0-9a-f]{1,8})$/i.exec(t);
+  if (!m) return null;
+  const id = m[1].toUpperCase().padStart(8, "0");
+  return id === "00000000" ? null : id;
+}
+
+function connect() {
+  const es = new EventSource("/events");
+  es.onopen = () => { $("offline").style.display = "none"; };
+  es.onmessage = (e) => { try { onEvent(JSON.parse(e.data)); } catch (err) { console.error(err); } };
+  es.onerror = () => { $("offline").style.display = "block"; };
+}
+
+/* ---------- команды ---------- */
+function say(text, ok) {
+  const el = $("msg");
+  el.textContent = text;
+  el.className = ok === undefined ? "muted" : ok ? "ok" : "err";
+}
+
+async function act(path, body) {
+  try {
+    const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", "X-CoopBridge-Token": TOKEN }, body: JSON.stringify(body || {}) });
+    const j = await r.json();
+    say(j.message || (j.ok ? "Готово" : "Ошибка"), j.ok === true);
+    return j.ok === true;
+  } catch (e) {
+    say("Нет связи с сервером панели", false);
+    return false;
+  }
+}
+
+/** Изменение параметра NPC. При отказе возвращает поля ввода к реальным значениям из игры. */
+async function setField(field, arg, value) {
+  if (!S.ref) { say("Сначала выберите NPC", false); return false; }
+  const body = { ref: S.ref, field };
+  if (arg !== undefined) body.arg = arg;
+  if (value !== undefined) body.value = value;
+  const ok = await act("/api/set", body);
+  if (!ok) fillInputs(true);
+  return ok;
+}
+
+/* ---------- правка параметров ---------- */
+$("main").addEventListener("change", (e) => {
+  const el = e.target;
+  if (!(el instanceof HTMLInputElement) || !el.dataset.field) return;
+  const v = Number(el.value);
+  if (el.value.trim() === "" || !Number.isFinite(v)) { say("Введите число", false); fillInputs(true); return; }
+  setField(el.dataset.field, undefined, v);
+});
+$("main").addEventListener("keydown", (e) => {
+  const el = e.target;
+  if (!(el instanceof HTMLInputElement) || !el.dataset.field) return;
+  if (e.key === "Enter") el.blur();
+  else if (e.key === "Escape") { fillInputs(true); el.blur(); }
+});
+
+for (const btn of document.querySelectorAll("button[data-act]")) {
+  btn.addEventListener("click", () => {
+    const field = btn.dataset.act;
+    if (field === "action.kill" && !confirm("Убить NPC?")) return;
+    setField(field);
+  });
+}
+$("combat-start").addEventListener("click", () => {
+  const t = $("combat-target").value.trim();
+  if (!t) { say("Введите refID цели боя или слово player", false); return; }
+  setField("action.startCombat", t);
+});
+
+$("fac-add").addEventListener("click", () => {
+  const id = $("fac-id").value.trim();
+  if (!id) { say("Введите FormID фракции", false); return; }
+  setField("faction.add", id, Number($("fac-rank").value || 0));
+});
+$("fac-rank-set").addEventListener("click", () => {
+  const id = $("fac-id").value.trim();
+  if (!id) { say("Введите FormID фракции", false); return; }
+  setField("faction.rank", id, Number($("fac-rank").value || 0));
+});
+$("fac-list").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-fac]");
+  if (b) setField("faction.remove", b.dataset.fac);
+});
+
+function invForm(field) {
+  const id = $("inv-id").value.trim();
+  if (!id) { say("Введите FormID предмета", false); return; }
+  setField(field, id, Number($("inv-count").value || 1));
+}
+$("inv-add").addEventListener("click", () => invForm("inventory.add"));
+$("inv-remove").addEventListener("click", () => invForm("inventory.remove"));
+$("inv-table").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-inv]");
+  if (!b) return;
+  const id = b.dataset.id, count = Number(b.dataset.count) || 1;
+  switch (b.dataset.inv) {
+    case "dec": setField("inventory.remove", id, 1); break;
+    case "all": if (confirm("Убрать все (" + count + " шт.)?")) setField("inventory.remove", id, count); break;
+    case "equip": setField("inventory.equip", id); break;
+    case "unequip": setField("inventory.unequip", id); break;
+  }
+});
+
+$("form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = $("ref").value.trim();
+  if (!text) { say("Введите refID или слово player", false); return; }
+  const ref = normalizeRef(text);
+  if (ref === null) { say("«" + text + "» не похоже на refID: нужны до 8 шестнадцатеричных цифр или слово player", false); return; }
+  try { localStorage.setItem("coopbridge.ref", ref); } catch (_) { /* не критично */ }
+  select(ref);
+});
+$("me").addEventListener("click", () => select(PLAYER));
+$("stop").addEventListener("click", () => { S.ref = null; bindSelected(); renderAll(); renderList(); if (!S.readOnly) act("/api/unwatch"); });
+
+$("list-body").addEventListener("click", (e) => {
+  const tr = e.target.closest("tr.row");
+  if (tr && tr.dataset.ref) select(tr.dataset.ref);
+});
+$("flt").addEventListener("input", renderList);
+$("sort").addEventListener("change", renderList);
+$("hide-dead").addEventListener("change", renderList);
+$("world-toggle").addEventListener("click", () => {
+  if (S.readOnly) { say("Режим просмотра: слежением управляет админ", false); return; }
+  act("/api/world", { on: !tracking });
+});
+
+try { const saved = localStorage.getItem("coopbridge.ref"); if (saved) $("ref").value = saved; } catch (_) { /* не критично */ }
+/* ---------- сеть: комната админа ---------- */
+const NET_KEY = "coopbridge.net";
+const netMode = () => document.querySelector('input[name="netmode"]:checked').value;
+let ifaces = [];
+
+function netPrefs() { try { return JSON.parse(localStorage.getItem(NET_KEY) || "{}"); } catch (_) { return {}; } }
+function saveNetPrefs() {
+  const p = netPrefs();
+  p.mode = netMode();
+  p[netMode() === "host" ? "hostAddr" : "viewerAddr"] = $("net-host").value.trim();
+  p.port = $("net-port").value;
+  p.name = $("net-name").value.trim();
+  try { localStorage.setItem(NET_KEY, JSON.stringify(p)); } catch (_) { /* не критично */ }
+}
+
+/** Подставляет подсказки и значения под выбранный режим. */
+function applyModeUi(keepAddress) {
+  const host = netMode() === "host";
+  $("net-host").placeholder = host ? "адрес, на котором слушать (ваш адрес в Radmin VPN)" : "адрес админа (его адрес в Radmin VPN)";
+  $("net-start").textContent = host ? "Запустить комнату" : "Подключиться";
+  $("net-edit-label").hidden = !host;
+  $("net-name").placeholder = host ? "ваше имя (админ)" : "ваше имя";
+  if (!keepAddress) {
+    const p = netPrefs();
+    const saved = host ? p.hostAddr : p.viewerAddr;
+    $("net-host").value = saved || (host ? bestInterface() : "");
+  }
+  $("net-hint").textContent = host
+    ? "Выберите свой адрес в Radmin VPN (подсказки в поле) или 0.0.0.0 для всех сетей. Сообщите игрокам адрес, порт и пароль. Windows может спросить разрешение для Node.js: разрешите."
+    : "Введите адрес админа в Radmin VPN, порт и пароль, которые он вам сообщил. Если админ разрешил, вы сможете править NPC: правки применяются у админа.";
+}
+
+function bestInterface() {
+  const vpn = ifaces.find((i) => /radmin|hamachi|vpn|zerotier|tailscale/i.test(i.name));
+  return vpn ? vpn.address : "0.0.0.0";
+}
+
+async function loadInterfaces() {
+  try {
+    const r = await fetch("/api/interfaces");
+    const j = await r.json();
+    ifaces = Array.isArray(j.interfaces) ? j.interfaces.filter((i) => isObj(i) && typeof i.address === "string") : [];
+  } catch (_) { ifaces = []; }
+  $("net-ifaces").innerHTML = ['<option value="0.0.0.0">все сети</option>'].concat(ifaces.map((i) => '<option value="' + esc(i.address) + '">' + esc(i.name) + "</option>")).join("");
+  if (net.mode === "off") applyModeUi(false);
+  renderNet();
+}
+
+function renderNet() {
+  const active = net.mode !== "off";
+  for (const el of ["net-host", "net-port", "net-pass", "net-name"]) $(el).disabled = active;
+  for (const el of document.querySelectorAll('input[name="netmode"]')) el.disabled = active;
+  $("net-start").disabled = active;
+  $("net-stop").disabled = !active;
+  // Переключатель прав у админа работает и при открытой комнате; у игрока его нет.
+  const edit = $("net-allow-edit");
+  if (net.mode === "host") { edit.checked = net.canEdit !== false; edit.disabled = false; }
+  else edit.disabled = active;
+  $("net-edit-label").hidden = net.mode === "viewer" || (net.mode === "off" && netMode() === "viewer");
+  S.canEdit = net.mode === "viewer" ? net.canEdit === true : true;
+  if (active) {
+    const r = document.querySelector('input[name="netmode"][value="' + net.mode + '"]');
+    if (r) r.checked = true;
+  }
+
+  const role = $("role");
+  role.hidden = !active;
+  if (net.mode === "host") {
+    role.className = "pill good";
+    role.lastChild.textContent = "АДМИН · игроков: " + (Array.isArray(net.viewers) ? net.viewers.length : 0);
+  } else if (net.mode === "viewer") {
+    role.className = "pill " + (net.state === "connected" ? "good" : net.state === "denied" ? "bad" : "warn");
+    role.lastChild.textContent = net.canEdit === true ? "ИГРОК · правка разрешена" : "ИГРОК · только просмотр";
+  }
+
+  const st = $("net-status");
+  if (net.mode === "off") {
+    const mine = ifaces.map((i) => i.name + " — " + i.address).join("; ");
+    st.className = "muted";
+    st.textContent = "Сеть выключена." + (mine ? " Ваши адреса: " + mine + "." : "");
+  } else if (net.mode === "host") {
+    const v = Array.isArray(net.viewers) ? net.viewers : [];
+    st.className = "ok";
+    st.textContent = "АДМИН: комната открыта на " + net.address + ". Игроков: " + v.length + (v.length ? " — " + v.map((x) => x.name + " (" + x.address + ")").join(", ") : "") + ". Правка игроками: " + (net.canEdit !== false ? "разрешена" : "запрещена") + ".";
+  } else {
+    st.className = net.state === "connected" ? "ok" : net.state === "denied" ? "err" : "muted";
+    const label = { connected: "подключено", connecting: "подключаемся", disconnected: "нет связи", denied: "отказано" }[net.state] || net.state;
+    st.textContent = "ИГРОК: " + label + " (" + net.address + "). " + (net.message || "") + (net.state === "connected" ? (net.canEdit === true ? " Правка NPC разрешена: изменения применяет админ." : " Админ запретил правки: только просмотр.") : "");
+  }
+  updateLocked();
+  renderWorldBtn();
+}
+
+for (const r of document.querySelectorAll('input[name="netmode"]')) r.addEventListener("change", () => { applyModeUi(false); });
+$("net-start").addEventListener("click", async () => {
+  const body = { mode: netMode(), host: $("net-host").value.trim(), port: Number($("net-port").value), password: $("net-pass").value, name: $("net-name").value.trim(), allowEdit: $("net-allow-edit").checked };
+  saveNetPrefs();
+  say("Запрос отправлен…");
+  await act("/api/net/start", body);
+  $("net-pass").value = "";
+});
+$("net-stop").addEventListener("click", () => act("/api/net/stop"));
+$("net-allow-edit").addEventListener("change", () => {
+  if (net.mode === "host") act("/api/net/permissions", { edit: $("net-allow-edit").checked });
+});
+
+{
+  const p = netPrefs();
+  if (p.mode === "viewer") document.querySelector('input[name="netmode"][value="viewer"]').checked = true;
+  if (p.port) $("net-port").value = p.port;
+  if (p.name) $("net-name").value = p.name;
+}
+applyModeUi(false);
+initVitals();
+renderAll();
+renderList();
+renderWorldBtn();
+renderNet();
+loadInterfaces();
+connect();
+setInterval(renderStamp, 1000);
+</script>
+</body>
+</html>

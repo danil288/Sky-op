@@ -1,0 +1,21 @@
+{
+  "name": "coop-bridge-server",
+  "version": "0.6.0",
+  "private": true,
+  "type": "module",
+  "description": "Локальный сервер для плагина CoopBridge (Skyrim SE/AE): слежение за NPC в реальном времени",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc && node dist/index.js",
+    "mock": "node tools/mock-plugin.mjs",
+    "test": "tsc && node test/smoke.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}
